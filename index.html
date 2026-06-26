@@ -67,11 +67,10 @@
 
     <script>
         const { FFmpeg } = FFmpegWASM;
-        const { fetchFile } = FFmpegUtil;
+        // 1. TAMBAHKAN toBlobURL di sini
+        const { fetchFile, toBlobURL } = FFmpegUtil;
 
         function videoResizer() {
-            // 1. PINDAHKAN KESINI: Variabel mesin FFmpeg ditaruh di luar "return" 
-            // agar tidak di-Proxy oleh Alpine.js
             let ffmpegInstance = null;
 
             return {
@@ -81,12 +80,10 @@
                 isProcessing: false,
                 progress: 0,
                 outputUrl: null,
-                // HAPUS "ffmpeg: null" dari sini
 
                 async init() {
                     ffmpegInstance = new FFmpeg();
                     ffmpegInstance.on('progress', ({ progress }) => {
-                        // Update tampilan persentase progress
                         this.progress = Math.round(progress * 100);
                     });
                 },
@@ -109,19 +106,20 @@
                     this.outputUrl = null;
 
                     try {
-                        // 2. GANTI PEMANGGILAN: Gunakan ffmpegInstance
+                        // 2. PERBAIKAN UTAMA: Memuat Core FFmpeg secara eksplisit menggunakan toBlobURL
                         if (!ffmpegInstance.loaded) {
-                            await ffmpegInstance.load();
+                            const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+                            await ffmpegInstance.load({
+                                coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                                wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                            });
                         }
 
                         const inputName = 'input_video.mp4';
                         const outputName = 'output_video.mp4';
 
-                        // Menulis file mentah ke memori virtual browser
                         await ffmpegInstance.writeFile(inputName, await fetchFile(this.videoFile));
 
-                        // 3. OPTIMASI KOMPRESI E-COMMERCE: 
-                        // Menambahkan penekan bitrate (-b:v) dan mempercepat render (-preset)
                         await ffmpegInstance.exec([
                             '-i', inputName,
                             '-vf', `scale=${this.selectedResolution}`,
@@ -130,7 +128,6 @@
                             outputName
                         ]);
 
-                        // Membaca hasil render dan membuat URL download
                         const data = await ffmpegInstance.readFile(outputName);
                         const blob = new Blob([data.buffer], { type: 'video/mp4' });
                         this.outputUrl = URL.createObjectURL(blob);
