@@ -5,13 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Resizer App</title>
-    <script src="./tailwind.js" crossorigin="anonymous"></script>
+    <script src="./tailwind.js"></script>
 
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" crossorigin="anonymous"></script>
-
-    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"
-        crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js" crossorigin="anonymous"></script>
 </head>
 
 <body class="bg-gray-50 min-h-screen flex items-center justify-center font-sans">
@@ -53,7 +49,7 @@
         <button @click="processVideo" :disabled="!videoFile || isProcessing"
             class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition disabled:opacity-50 flex justify-center items-center">
             <span x-show="!isProcessing">Generate Resize</span>
-            <span x-show="isProcessing">Memproses... <span x-text="progress + '%'"></span></span>
+            <span x-show="isProcessing">Memproses... <span x-text="progressText"></span></span>
         </button>
 
         <div x-show="outputUrl" class="mt-6 p-4 bg-green-50 rounded-lg border border-green-200" style="display: none;">
@@ -66,32 +62,16 @@
     </div>
 
     <script>
-        const { FFmpeg } = FFmpegWASM;
-        const { fetchFile, toBlobURL } = FFmpegUtil;
-
         function videoResizer() {
-            let ffmpegInstance = null;
-
             return {
                 videoFile: null,
                 selectedResolution: '1280x720',
                 selectedResolutionText: '720p (HD)',
                 isProcessing: false,
-                progress: 0,
+                progressText: '',
                 outputUrl: null,
-
-                async init() {
-                    ffmpegInstance = new FFmpeg();
-                    
-                    // RADAR NYALA: Menampilkan proses internal FFmpeg ke Console Browser
-                    ffmpegInstance.on('log', ({ message }) => {
-                        console.log('[FFmpeg Log]:', message);
-                    });
-
-                    ffmpegInstance.on('progress', ({ progress }) => {
-                        this.progress = Math.round(progress * 100);
-                    });
-                },
+                // TARUH API KEY KAMU DI BAWAH INI
+                apiKey: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxIiwianRpIjoiZjFmMGVlZTNiYTk5NmEyNmQyYjdmOWM1YTAzY2Q5YTZkYmU3MzBiOGU1NjkwMjNkYzU4ZjIyYjNiMjBhNjZmMGQ3MjBlYTE3NmI5MTY2YTYiLCJpYXQiOjE3ODI0NDI4MTEuNDkyOTEyLCJuYmYiOjE3ODI0NDI4MTEuNDkyOTEzLCJleHAiOjQ5MzgxMTY0MTEuNDg2NDAzLCJzdWIiOiI3NjEwOTk3MSIsInNjb3BlcyI6WyJ0YXNrLnJlYWQiLCJ0YXNrLndyaXRlIiwid2ViaG9vay5yZWFkIiwid2ViaG9vay53cml0ZSJdfQ.DyzW2xOT6u_n25N2Wa95rlifTaQ4Xe3Mt7J5d9s2Lm4tz45K8wHRu1zXfIOCWnNYRYgJ-ioK5ZDNI3gbaZc2UjxBRnsKI-8nB5fVb4QnfMotu_5dGGO9yJuMGaLmOZFmznmn1RBMsuy6PPP0KfmlJG8G8wWMmlH_Sj0oSWOlfMT0U1MpNKY19mPDycE0-gCsGXY5rtuUyPpzecOXAriKfZcwcavSFlfWqCyB7BDXmzhaTddkQ0Vhg_L9vEWzibvPXiTmT2AdAGuMgxn1M46379E9C3kokIkW9_5vkfc_0aAfHNeZBlTXZ87OctPfoMrDutJU0cNmtnwYq2U8g6SLoUPyUVz3hKStizJ-CLibEI3iNuNetUOMPuL82Jw5dZpNPer0I0j3BoPOQH0jFErl-fqjGyFYCh9-eMrRJRlWLE_Hq1ovem9M8_qtuxfjzmu0YjTWdzckqletUItNrO97YPT61EnW6OpbC3QxxTlUiF53qXrUa3xSTnrgYNbMuNdsJh46cb_lFeeQcsdozByqa-H-acwUs9n1LiI__4KRXtMJ_F3SCr-UZljO_2z-VL8CrLn7mHGIusq6mTMGGrwnPjpjunE7xT_unqOwsJeyyNFagL1r1bDqFt6F-KDOg6z9oMt7jQKUKK9_L2-5Qc6wmGJH9P-u3sq11S_zc3jEr_s',
 
                 handleFileUpload(event) {
                     this.videoFile = event.target.files[0];
@@ -107,50 +87,81 @@
                     if (!this.videoFile) return;
 
                     this.isProcessing = true;
-                    this.progress = 0;
                     this.outputUrl = null;
 
                     try {
-                        if (!ffmpegInstance.loaded) {
-                            console.log('Memulai unduh mesin core FFmpeg...');
-                            // PERBAIKAN 1: Pindah ke JSDelivr agar tidak nyangkut saat download WASM
-                            const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
-                            await ffmpegInstance.load({
-                                coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-                                wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                        // 1. MEMBUAT JOB KONVERSI
+                        this.progressText = 'Menyiapkan server...';
+                        const jobRes = await fetch('https://api.cloudconvert.com/v2/jobs', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${this.apiKey}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                tasks: {
+                                    'import-video': { operation: 'import/upload' },
+                                    'convert-video': {
+                                        operation: 'convert',
+                                        input: 'import-video',
+                                        output_format: 'mp4',
+                                        video_resolution: this.selectedResolution,
+                                        video_preset: 'ultrafast' // Mempercepat proses
+                                    },
+                                    'export-video': {
+                                        operation: 'export/url',
+                                        input: 'convert-video'
+                                    }
+                                }
+                            })
+                        });
+
+                        if (!jobRes.ok) throw new Error('Gagal menghubungi API CloudConvert');
+                        const jobData = await jobRes.json();
+                        const jobId = jobData.data.id;
+
+                        // Mencari link upload dari respon API
+                        const uploadTask = jobData.data.tasks.find(t => t.name === 'import-video');
+
+                        // 2. MENGUNGGAH VIDEO KE CLOUDCONVERT
+                        this.progressText = 'Mengunggah video...';
+                        const formData = new FormData();
+                        formData.append('file', this.videoFile);
+
+                        await fetch(uploadTask.result.form.url, {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        // 3. MENUNGGU PROSES SELESAI (POLLING)
+                        this.progressText = 'Memproses ukuran video...';
+                        let jobFinished = false;
+                        let finalUrl = null;
+
+                        while (!jobFinished) {
+                            // Tunggu 3 detik sebelum mengecek status lagi agar tidak terkena limit API
+                            await new Promise(resolve => setTimeout(resolve, 3000));
+
+                            const checkRes = await fetch(`https://api.cloudconvert.com/v2/jobs/${jobId}`, {
+                                headers: { 'Authorization': `Bearer ${this.apiKey}` }
                             });
-                            console.log('Mesin FFmpeg berhasil dimuat!');
+                            const checkData = await checkRes.json();
+                            const status = checkData.data.status;
+
+                            if (status === 'finished') {
+                                jobFinished = true;
+                                const exportTask = checkData.data.tasks.find(t => t.name === 'export-video');
+                                finalUrl = exportTask.result.files[0].url;
+                            } else if (status === 'error') {
+                                throw new Error('Server gagal memproses format video ini.');
+                            }
                         }
 
-                        const inputName = 'input_video.mp4';
-                        const outputName = 'output_video.mp4';
-
-                        console.log('Menyalin video ke memori virtual...');
-                        await ffmpegInstance.writeFile(inputName, await fetchFile(this.videoFile));
-
-                        console.log('Mulai proses kompresi...');
-                        // PERBAIKAN 2: Menggunakan -s alih-alih -vf scale agar format 'x' terbaca
-                        const exitCode = await ffmpegInstance.exec([
-                            '-i', inputName,
-                            '-s', this.selectedResolution, 
-                            '-b:v', '1000k',
-                            '-preset', 'ultrafast',
-                            outputName
-                        ]);
-
-                        // Mengecek apakah FFmpeg crash di belakang layar
-                        if (exitCode !== 0) {
-                            throw new Error("Mesin FFmpeg gagal memproses video. Cek console untuk detail log.");
-                        }
-
-                        console.log('Membaca hasil render...');
-                        const data = await ffmpegInstance.readFile(outputName);
-                        const blob = new Blob([data.buffer], { type: 'video/mp4' });
-                        this.outputUrl = URL.createObjectURL(blob);
-                        console.log('Selesai!');
+                        // 4. SELESAI
+                        this.outputUrl = finalUrl;
 
                     } catch (error) {
-                        console.error('Error saat memproses video:', error);
+                        console.error(error);
                         alert(`Terjadi kesalahan: ${error.message}`);
                     } finally {
                         this.isProcessing = false;
