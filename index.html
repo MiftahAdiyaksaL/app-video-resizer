@@ -67,7 +67,6 @@
 
     <script>
         const { FFmpeg } = FFmpegWASM;
-        // 1. TAMBAHKAN toBlobURL di sini
         const { fetchFile, toBlobURL } = FFmpegUtil;
 
         function videoResizer() {
@@ -83,6 +82,12 @@
 
                 async init() {
                     ffmpegInstance = new FFmpeg();
+                    
+                    // RADAR NYALA: Menampilkan proses internal FFmpeg ke Console Browser
+                    ffmpegInstance.on('log', ({ message }) => {
+                        console.log('[FFmpeg Log]:', message);
+                    });
+
                     ffmpegInstance.on('progress', ({ progress }) => {
                         this.progress = Math.round(progress * 100);
                     });
@@ -106,35 +111,47 @@
                     this.outputUrl = null;
 
                     try {
-                        // 2. PERBAIKAN UTAMA: Memuat Core FFmpeg secara eksplisit menggunakan toBlobURL
                         if (!ffmpegInstance.loaded) {
-                            const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+                            console.log('Memulai unduh mesin core FFmpeg...');
+                            // PERBAIKAN 1: Pindah ke JSDelivr agar tidak nyangkut saat download WASM
+                            const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
                             await ffmpegInstance.load({
                                 coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                                 wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
                             });
+                            console.log('Mesin FFmpeg berhasil dimuat!');
                         }
 
                         const inputName = 'input_video.mp4';
                         const outputName = 'output_video.mp4';
 
+                        console.log('Menyalin video ke memori virtual...');
                         await ffmpegInstance.writeFile(inputName, await fetchFile(this.videoFile));
 
-                        await ffmpegInstance.exec([
+                        console.log('Mulai proses kompresi...');
+                        // PERBAIKAN 2: Menggunakan -s alih-alih -vf scale agar format 'x' terbaca
+                        const exitCode = await ffmpegInstance.exec([
                             '-i', inputName,
-                            '-vf', `scale=${this.selectedResolution}`,
+                            '-s', this.selectedResolution, 
                             '-b:v', '1000k',
                             '-preset', 'ultrafast',
                             outputName
                         ]);
 
+                        // Mengecek apakah FFmpeg crash di belakang layar
+                        if (exitCode !== 0) {
+                            throw new Error("Mesin FFmpeg gagal memproses video. Cek console untuk detail log.");
+                        }
+
+                        console.log('Membaca hasil render...');
                         const data = await ffmpegInstance.readFile(outputName);
                         const blob = new Blob([data.buffer], { type: 'video/mp4' });
                         this.outputUrl = URL.createObjectURL(blob);
+                        console.log('Selesai!');
 
                     } catch (error) {
                         console.error('Error saat memproses video:', error);
-                        alert('Terjadi kesalahan saat memproses video. Coba muat ulang halaman.');
+                        alert(`Terjadi kesalahan: ${error.message}`);
                     } finally {
                         this.isProcessing = false;
                     }
