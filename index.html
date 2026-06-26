@@ -90,9 +90,28 @@
                     this.outputUrl = null;
 
                     try {
-                        const [videoWidth, videoHeight] = this.selectedResolution.split('x').map(Number);
+                        // 1. RADAR PINTAR: Mengecek orientasi video asli sebelum dikirim
+                        this.progressText = 'Mengecek orientasi video...';
+                        const isPortrait = await new Promise((resolve) => {
+                            const video = document.createElement('video');
+                            video.preload = 'metadata';
+                            video.onloadedmetadata = () => {
+                                URL.revokeObjectURL(video.src);
+                                // Jika tinggi lebih besar dari lebar, berarti portrait
+                                resolve(video.videoHeight > video.videoWidth);
+                            };
+                            video.src = URL.createObjectURL(this.videoFile);
+                        });
 
-                        // 1. MEMBUAT JOB KONVERSI
+                        // Mengambil angka dari dropdown (defaultnya format landscape)
+                        let [videoWidth, videoHeight] = this.selectedResolution.split('x').map(Number);
+
+                        // 2. KOREKSI ORIENTASI: Jika video aslinya portrait, kita tukar dimensinya
+                        if (isPortrait) {
+                            [videoWidth, videoHeight] = [videoHeight, videoWidth];
+                        }
+
+                        // 3. MEMBUAT JOB KONVERSI
                         this.progressText = 'Menyiapkan server...';
 
                         const jobRes = await fetch('https://api.cloudconvert.com/v2/jobs', {
@@ -108,8 +127,10 @@
                                         operation: 'convert',
                                         input: 'import-video',
                                         output_format: 'mp4',
+                                        // Lebar & tinggi yang dikirim sudah dijamin sesuai orientasi aslinya
                                         width: videoWidth,
-                                        height: videoHeight
+                                        height: videoHeight,
+                                        video_preset: 'ultrafast' // Menekan ukuran file
                                     },
                                     'export-video': {
                                         operation: 'export/url',
@@ -128,15 +149,13 @@
                         const jobId = jobData.data.id;
                         const uploadTask = jobData.data.tasks.find(t => t.name === 'import-video');
 
-                        // 2. MENGUNGGAH VIDEO KE CLOUDCONVERT (DENGAN PARAMETER KEAMANAN)
+                        // 4. MENGUNGGAH VIDEO KE CLOUDCONVERT
                         this.progressText = 'Mengunggah video...';
                         const formData = new FormData();
 
-                        // WAJIB: Memasukkan semua parameter token dari CloudConvert
                         for (const [key, value] of Object.entries(uploadTask.result.form.parameters)) {
                             formData.append(key, value);
                         }
-                        // File HARUS dimasukkan paling terakhir setelah parameter keamanan
                         formData.append('file', this.videoFile);
 
                         const uploadRes = await fetch(uploadTask.result.form.url, {
@@ -144,12 +163,11 @@
                             body: formData
                         });
 
-                        // Cek jika upload ditolak
                         if (!uploadRes.ok) {
                             throw new Error('Gagal mengunggah video. Server menolak file.');
                         }
 
-                        // 3. MENUNGGU PROSES SELESAI (POLLING)
+                        // 5. MENUNGGU PROSES SELESAI (POLLING)
                         this.progressText = 'Memproses ukuran video...';
                         let jobFinished = false;
                         let finalUrl = null;
@@ -172,7 +190,7 @@
                             }
                         }
 
-                        // 4. SELESAI
+                        // 6. SELESAI
                         this.outputUrl = finalUrl;
 
                     } catch (error) {
