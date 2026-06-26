@@ -90,8 +90,11 @@
                     this.outputUrl = null;
 
                     try {
-                        // 1. MEMBUAT JOB KONVERSI
+                        // 1. Memecah resolusi "1280x720" menjadi width: 1280 dan height: 720
+                        const [videoWidth, videoHeight] = this.selectedResolution.split('x').map(Number);
+
                         this.progressText = 'Menyiapkan server...';
+
                         const jobRes = await fetch('https://api.cloudconvert.com/v2/jobs', {
                             method: 'POST',
                             headers: {
@@ -105,8 +108,9 @@
                                         operation: 'convert',
                                         input: 'import-video',
                                         output_format: 'mp4',
-                                        video_resolution: this.selectedResolution,
-                                        video_preset: 'ultrafast' // Mempercepat proses
+                                        // PERBAIKAN DI SINI: Format parameter yang sesuai API CloudConvert
+                                        width: videoWidth,
+                                        height: videoHeight
                                     },
                                     'export-video': {
                                         operation: 'export/url',
@@ -116,7 +120,13 @@
                             })
                         });
 
-                        if (!jobRes.ok) throw new Error('Gagal menghubungi API CloudConvert');
+                        // Menangkap detail error dari server jika gagal
+                        if (!jobRes.ok) {
+                            const errorData = await jobRes.json();
+                            console.error("Detail Error API:", errorData);
+                            throw new Error(errorData.message || 'Gagal menghubungi API CloudConvert');
+                        }
+
                         const jobData = await jobRes.json();
                         const jobId = jobData.data.id;
 
@@ -139,7 +149,7 @@
                         let finalUrl = null;
 
                         while (!jobFinished) {
-                            // Tunggu 3 detik sebelum mengecek status lagi agar tidak terkena limit API
+                            // Jeda 3 detik agar tidak membebani server
                             await new Promise(resolve => setTimeout(resolve, 3000));
 
                             const checkRes = await fetch(`https://api.cloudconvert.com/v2/jobs/${jobId}`, {
