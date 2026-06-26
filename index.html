@@ -90,9 +90,9 @@
                     this.outputUrl = null;
 
                     try {
-                        // 1. Memecah resolusi "1280x720" menjadi width: 1280 dan height: 720
                         const [videoWidth, videoHeight] = this.selectedResolution.split('x').map(Number);
 
+                        // 1. MEMBUAT JOB KONVERSI
                         this.progressText = 'Menyiapkan server...';
 
                         const jobRes = await fetch('https://api.cloudconvert.com/v2/jobs', {
@@ -108,7 +108,6 @@
                                         operation: 'convert',
                                         input: 'import-video',
                                         output_format: 'mp4',
-                                        // PERBAIKAN DI SINI: Format parameter yang sesuai API CloudConvert
                                         width: videoWidth,
                                         height: videoHeight
                                     },
@@ -120,28 +119,35 @@
                             })
                         });
 
-                        // Menangkap detail error dari server jika gagal
                         if (!jobRes.ok) {
                             const errorData = await jobRes.json();
-                            console.error("Detail Error API:", errorData);
                             throw new Error(errorData.message || 'Gagal menghubungi API CloudConvert');
                         }
 
                         const jobData = await jobRes.json();
                         const jobId = jobData.data.id;
-
-                        // Mencari link upload dari respon API
                         const uploadTask = jobData.data.tasks.find(t => t.name === 'import-video');
 
-                        // 2. MENGUNGGAH VIDEO KE CLOUDCONVERT
+                        // 2. MENGUNGGAH VIDEO KE CLOUDCONVERT (DENGAN PARAMETER KEAMANAN)
                         this.progressText = 'Mengunggah video...';
                         const formData = new FormData();
+
+                        // WAJIB: Memasukkan semua parameter token dari CloudConvert
+                        for (const [key, value] of Object.entries(uploadTask.result.form.parameters)) {
+                            formData.append(key, value);
+                        }
+                        // File HARUS dimasukkan paling terakhir setelah parameter keamanan
                         formData.append('file', this.videoFile);
 
-                        await fetch(uploadTask.result.form.url, {
+                        const uploadRes = await fetch(uploadTask.result.form.url, {
                             method: 'POST',
                             body: formData
                         });
+
+                        // Cek jika upload ditolak
+                        if (!uploadRes.ok) {
+                            throw new Error('Gagal mengunggah video. Server menolak file.');
+                        }
 
                         // 3. MENUNGGU PROSES SELESAI (POLLING)
                         this.progressText = 'Memproses ukuran video...';
@@ -149,7 +155,6 @@
                         let finalUrl = null;
 
                         while (!jobFinished) {
-                            // Jeda 3 detik agar tidak membebani server
                             await new Promise(resolve => setTimeout(resolve, 3000));
 
                             const checkRes = await fetch(`https://api.cloudconvert.com/v2/jobs/${jobId}`, {
